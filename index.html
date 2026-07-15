@@ -1,0 +1,1431 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Order Manager</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>tailwind.config = { darkMode: 'class' };</script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Hind Siliguri', sans-serif; background-color: #f8fafc; color: #1e293b; transition: background-color .2s, color .2s; }
+        .page { display: none; animation: slideUp 0.25s ease-out; }
+        .page.active { display: block; }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+
+        .nav-active { color: #3b82f6; position: relative; }
+        .nav-active::after { content: ''; position: absolute; bottom: -8px; width: 5px; height: 5px; background: #3b82f6; border-radius: 50%; }
+
+        .header-card { background: linear-gradient(135deg, #1e293b 0%, #334155 100%); box-shadow: 0 15px 25px -5px rgba(0,0,0,0.1); }
+
+        .modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.5); display: none; align-items: flex-end; justify-content: center; z-index: 100; }
+        .modal-overlay.active { display: flex; }
+        .modal-box { background: white; width: 100%; max-width: 30rem; border-radius: 28px 28px 0 0; padding: 24px 20px 28px; animation: slideUp .25s ease-out; max-height: 88vh; overflow-y: auto; }
+
+        /* ---- Dark mode (simplified override system) ---- */
+        body.dark { background-color: #0f172a; color: #e2e8f0; }
+        body.dark .bg-white { background-color: #1e293b !important; }
+        body.dark .bg-gray-50 { background-color: #0f172a !important; }
+        body.dark .bg-gray-100 { background-color: #334155 !important; color: #e2e8f0; }
+        body.dark .text-slate-800, body.dark .text-slate-700 { color: #f1f5f9 !important; }
+        body.dark .text-gray-400 { color: #94a3b8 !important; }
+        body.dark .text-gray-500 { color: #94a3b8 !important; }
+        body.dark .border-gray-100, body.dark .border-gray-50 { border-color: #334155 !important; }
+        body.dark .modal-box { background-color: #1e293b; color: #e2e8f0; }
+        body.dark header.bg-white { background-color: #1e293b !important; }
+        body.dark nav.bg-white\/80 { background-color: rgba(30,41,59,0.9) !important; }
+
+        .lock-dot { width: 14px; height: 14px; border-radius: 50%; background: #cbd5e1; }
+        .lock-dot.filled { background: #3b82f6; }
+    </style>
+</head>
+<body class="min-h-screen">
+
+    <!-- ============ PIN LOCK SCREEN ============ -->
+    <div id="lock-screen" class="hidden fixed inset-0 bg-slate-900 z-[200] flex flex-col items-center justify-center text-white p-6">
+        <p class="text-sm opacity-60 mb-2">অ্যাপ লক করা আছে</p>
+        <h2 id="lock-shopname" class="text-xl font-black mb-8">Order Manager</h2>
+        <div class="flex gap-3 mb-8" id="lock-dots">
+            <div class="lock-dot"></div><div class="lock-dot"></div><div class="lock-dot"></div><div class="lock-dot"></div>
+        </div>
+        <input type="tel" id="lock-pin-input" maxlength="4" class="w-40 text-center text-2xl tracking-[10px] p-3 rounded-2xl bg-slate-800 border border-slate-700 outline-none mb-4" placeholder="----" oninput="handleLockInput(this)">
+        <button onclick="tryUnlock()" class="w-40 bg-blue-600 py-3 rounded-2xl font-bold text-sm">আনলক করুন</button>
+        <p id="lock-error" class="text-red-400 text-xs mt-3 hidden">ভুল পিন! আবার চেষ্টা করুন</p>
+    </div>
+
+    <header class="bg-white px-5 py-4 flex justify-between items-center sticky top-0 z-50 shadow-sm">
+        <div class="flex items-center gap-3">
+            <img id="header-logo" src="" class="hidden w-9 h-9 rounded-xl object-cover">
+            <div>
+                <p class="text-[10px] text-gray-400 font-bold uppercase tracking-widest">অর্ডার ম্যানেজার</p>
+                <p id="header-shop-name" class="text-lg font-black">Order Manager</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-3">
+            <button onclick="toggleTheme()" id="theme-toggle-btn" class="text-xl">🌙</button>
+            <button onclick="showPage('settings')" class="text-gray-400 text-xl">⚙</button>
+        </div>
+    </header>
+
+    <main class="max-w-md mx-auto p-5 pb-24">
+
+        <!-- ============ DASHBOARD ============ -->
+        <section id="page-dashboard" class="page active space-y-5">
+            <div class="header-card rounded-[32px] p-6 text-white relative overflow-hidden">
+                <div class="relative z-10">
+                    <p class="text-xs opacity-70 mb-1 font-medium">নিট লাভ (ক্রয় মূল্য ও বুস্ট খরচ বাদে)</p>
+                    <h2 id="dash-net-profit" class="text-4xl font-black">৳0</h2>
+                    <div class="mt-5 grid grid-cols-2 gap-4">
+                        <div>
+                            <p class="text-[10px] opacity-60 uppercase font-bold">মোট বিক্রি (Net)</p>
+                            <p id="dash-total-sales" class="text-sm font-bold text-green-300">৳0</p>
+                        </div>
+                        <div>
+                            <p class="text-[10px] opacity-60 uppercase font-bold">বুস্ট খরচ</p>
+                            <p id="dash-total-boost" class="text-sm font-bold text-red-300">৳0</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-3 gap-3">
+                <div class="bg-white p-3 rounded-2xl border border-gray-100 shadow-sm text-center">
+                    <p id="dash-total-orders" class="text-lg font-black text-slate-800">0</p>
+                    <p class="text-[9px] text-gray-400 font-bold uppercase">অর্ডার</p>
+                </div>
+                <div class="bg-white p-3 rounded-2xl border border-gray-100 shadow-sm text-center">
+                    <p id="dash-total-condition" class="text-lg font-black text-slate-800">৳0</p>
+                    <p class="text-[9px] text-gray-400 font-bold uppercase">কন্ডিশন</p>
+                </div>
+                <div class="bg-white p-3 rounded-2xl border border-gray-100 shadow-sm text-center">
+                    <p id="dash-total-delivery" class="text-lg font-black text-slate-800">৳0</p>
+                    <p class="text-[9px] text-gray-400 font-bold uppercase">ডেলিভারি</p>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-4 gap-3 text-center">
+                <button onclick="showPage('neworder')" class="space-y-2">
+                    <div class="w-full aspect-square bg-white rounded-2xl shadow-sm flex items-center justify-center text-blue-600 border border-gray-100 text-xl">+</div>
+                    <p class="text-[10px] font-bold text-gray-500">নতুন অর্ডার</p>
+                </button>
+                <button onclick="showPage('orders')" class="space-y-2">
+                    <div class="w-full aspect-square bg-white rounded-2xl shadow-sm flex items-center justify-center text-purple-600 border border-gray-100 text-xl">📋</div>
+                    <p class="text-[10px] font-bold text-gray-500">অর্ডার লিস্ট</p>
+                </button>
+                <button onclick="showPage('boost')" class="space-y-2">
+                    <div class="w-full aspect-square bg-white rounded-2xl shadow-sm flex items-center justify-center text-orange-500 border border-gray-100 text-xl">📢</div>
+                    <p class="text-[10px] font-bold text-gray-500">বুস্ট খরচ</p>
+                </button>
+                <button onclick="showPage('reports')" class="space-y-2">
+                    <div class="w-full aspect-square bg-white rounded-2xl shadow-sm flex items-center justify-center text-teal-600 border border-gray-100 text-xl">📊</div>
+                    <p class="text-[10px] font-bold text-gray-500">রিপোর্ট</p>
+                </button>
+            </div>
+
+            <div class="space-y-3">
+                <div class="flex justify-between items-center">
+                    <p class="text-sm font-bold">সাম্প্রতিক অর্ডার</p>
+                    <button onclick="showPage('orders')" class="text-[10px] text-blue-600 font-bold">সব দেখুন →</button>
+                </div>
+                <div id="dash-recent-orders" class="space-y-3"></div>
+            </div>
+        </section>
+
+        <!-- ============ NEW ORDER (PASTE & PARSE) ============ -->
+        <section id="page-neworder" class="page space-y-4">
+            <h2 class="text-lg font-bold">নতুন অর্ডার যোগ করুন</h2>
+            <p class="text-xs text-gray-400 -mt-3">WhatsApp/Messenger থেকে অর্ডারের লেখা কপি করে নিচে পেস্ট করুন। একাধিক অর্ডার একসাথে পেস্ট করলেও প্রতিটা আলাদা করে শনাক্ত হবে — নাম না থাকলেও সমস্যা নেই।</p>
+
+            <textarea id="paste-input" class="w-full h-40 p-4 bg-white rounded-2xl border border-gray-100 shadow-sm outline-none text-sm" placeholder="এখানে অর্ডারের লেখা পেস্ট করুন..."></textarea>
+
+            <button onclick="runParse()" class="w-full bg-slate-800 text-white py-4 rounded-2xl font-bold text-sm shadow-lg">🔍 পার্স করুন</button>
+
+            <div id="parse-preview-box" class="hidden space-y-3">
+                <p class="text-sm font-bold"><span id="parse-count">0</span> টি অর্ডার শনাক্ত হয়েছে</p>
+                <div id="parse-preview-list" class="space-y-3"></div>
+                <button onclick="confirmSaveParsed()" class="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold text-sm shadow-lg shadow-blue-200">✅ সব সেভ করুন</button>
+                <button onclick="cancelParsePreview()" class="w-full text-gray-400 font-bold text-sm py-2">বাতিল</button>
+            </div>
+        </section>
+
+        <!-- ============ ORDER LIST ============ -->
+        <section id="page-orders" class="page space-y-4">
+            <h2 class="text-lg font-bold">অর্ডার লিস্ট</h2>
+            <div class="flex gap-2">
+                <input type="text" id="order-search" oninput="renderOrderList()" placeholder="নাম, মোবাইল, ঠিকানা বা কন্ডিশন দিয়ে খুঁজুন" class="flex-1 p-3 bg-white rounded-2xl border border-gray-100 shadow-sm outline-none text-sm">
+                <input type="date" id="order-date-filter" onchange="renderOrderList()" class="p-3 bg-white rounded-2xl border border-gray-100 shadow-sm outline-none text-xs">
+            </div>
+            <div id="order-list" class="space-y-3"></div>
+        </section>
+
+        <!-- ============ FACEBOOK BOOST ============ -->
+        <section id="page-boost" class="page space-y-4">
+            <h2 class="text-lg font-bold">Facebook Boost খরচ</h2>
+            <p class="text-xs text-gray-400 -mt-3">শুধু ডলার এমাউন্ট লিখুন (যেমন: 9.44), সেটিংসের ডলার রেট দিয়ে অটো টাকায় হিসাব হবে।</p>
+            <div class="bg-white p-4 rounded-3xl border border-gray-100 shadow-sm flex gap-3">
+                <input type="number" id="boost-dollar" step="0.01" placeholder="ডলার এমাউন্ট (যেমন 9.44)" class="flex-1 p-3 bg-gray-50 rounded-2xl border-none outline-none text-sm">
+                <button onclick="addBoost()" class="bg-slate-800 text-white px-5 rounded-2xl font-bold text-sm">যোগ</button>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div class="bg-white p-4 rounded-3xl border border-gray-100 shadow-sm text-center">
+                    <p class="text-[10px] text-gray-400 font-bold uppercase">মোট ডলার</p>
+                    <p id="boost-total-dollar" class="text-2xl font-black text-slate-800">$0</p>
+                </div>
+                <div class="bg-white p-4 rounded-3xl border border-gray-100 shadow-sm text-center">
+                    <p class="text-[10px] text-gray-400 font-bold uppercase">মোট টাকা</p>
+                    <p id="boost-total" class="text-2xl font-black text-red-500">৳0</p>
+                </div>
+            </div>
+            <div id="boost-list" class="space-y-3"></div>
+        </section>
+
+        <!-- ============ REPORTS ============ -->
+        <section id="page-reports" class="page space-y-4">
+            <h2 class="text-lg font-bold">রিপোর্ট</h2>
+            <div class="grid grid-cols-4 gap-2">
+                <button onclick="setReportPreset('today')" id="rp-today" class="py-2 rounded-xl text-[11px] font-bold bg-slate-800 text-white">আজ</button>
+                <button onclick="setReportPreset('week')" id="rp-week" class="py-2 rounded-xl text-[11px] font-bold bg-gray-100 text-gray-500">সপ্তাহ</button>
+                <button onclick="setReportPreset('month')" id="rp-month" class="py-2 rounded-xl text-[11px] font-bold bg-gray-100 text-gray-500">মাস</button>
+                <button onclick="setReportPreset('custom')" id="rp-custom" class="py-2 rounded-xl text-[11px] font-bold bg-gray-100 text-gray-500">কাস্টম</button>
+            </div>
+            <div id="report-custom-range" class="hidden grid grid-cols-2 gap-3">
+                <input type="date" id="report-start-date" onchange="renderReport()" class="p-3 bg-white rounded-2xl border border-gray-100 shadow-sm outline-none text-xs">
+                <input type="date" id="report-end-date" onchange="renderReport()" class="p-3 bg-white rounded-2xl border border-gray-100 shadow-sm outline-none text-xs">
+            </div>
+
+            <div class="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm space-y-3" id="report-summary">
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+                <button onclick="exportReportCSV()" class="bg-green-600 text-white py-3 rounded-2xl font-bold text-sm">CSV এক্সপোর্ট</button>
+                <button onclick="exportReportPDF()" class="bg-slate-800 text-white py-3 rounded-2xl font-bold text-sm">রিপোর্ট (HTML)</button>
+            </div>
+        </section>
+
+        <!-- ============ SETTINGS ============ -->
+        <section id="page-settings" class="page space-y-4">
+            <h2 class="text-lg font-bold">সেটিংস</h2>
+
+            <div class="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm space-y-3">
+                <p class="text-xs font-bold text-gray-400 uppercase">দোকানের তথ্য</p>
+                <div class="flex items-center gap-3">
+                    <div class="w-14 h-14 bg-gray-100 rounded-2xl overflow-hidden flex items-center justify-center text-gray-400">
+                        <img id="settings-logo-preview" src="" class="hidden w-full h-full object-cover">
+                        <span id="settings-logo-placeholder">🏪</span>
+                    </div>
+                    <label class="flex-1 text-center bg-gray-50 py-3 rounded-2xl text-xs font-bold cursor-pointer">
+                        লোগো আপলোড করুন
+                        <input type="file" id="shop-logo-input" accept="image/*" class="hidden" onchange="handleLogoUpload(this)">
+                    </label>
+                </div>
+                <input type="text" id="set-shop-name" placeholder="দোকানের নাম" class="w-full p-3 bg-gray-50 rounded-2xl border-none outline-none text-sm font-bold">
+                <input type="text" id="set-currency" placeholder="মুদ্রা চিহ্ন (৳)" class="w-full p-3 bg-gray-50 rounded-2xl border-none outline-none text-sm">
+            </div>
+
+            <div class="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm space-y-3">
+                <p class="text-xs font-bold text-gray-400 uppercase">পণ্যের ক্রয় মূল্য</p>
+                <p class="text-[10px] text-gray-400 -mt-2">এই দামগুলো আপনার কেনা/উৎপাদন খরচ — এখান থেকেই নিট লাভ হিসাব হবে (Condition Amount থেকে বাদ যাবে)</p>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-[10px] text-gray-400 font-bold">বড় প্লেটের ক্রয় মূল্য</label>
+                        <input type="number" id="set-large-price" class="w-full p-3 bg-gray-50 rounded-2xl border-none outline-none text-sm">
+                    </div>
+                    <div>
+                        <label class="text-[10px] text-gray-400 font-bold">ছোট প্লেটের ক্রয় মূল্য</label>
+                        <input type="number" id="set-small-price" class="w-full p-3 bg-gray-50 rounded-2xl border-none outline-none text-sm">
+                    </div>
+                    <div>
+                        <label class="text-[10px] text-gray-400 font-bold">আয়নার ক্রয় মূল্য</label>
+                        <input type="number" id="set-mirror-price" class="w-full p-3 bg-gray-50 rounded-2xl border-none outline-none text-sm">
+                    </div>
+                    <div>
+                        <label class="text-[10px] text-gray-400 font-bold">ডেলিভারি চার্জ</label>
+                        <input type="number" id="set-delivery-charge" class="w-full p-3 bg-gray-50 rounded-2xl border-none outline-none text-sm">
+                    </div>
+                    <div>
+                        <label class="text-[10px] text-gray-400 font-bold">প্যাকেজিং/কার্টুন খরচ (প্রতি পার্সেল)</label>
+                        <input type="number" id="set-packaging-cost" class="w-full p-3 bg-gray-50 rounded-2xl border-none outline-none text-sm">
+                    </div>
+                </div>
+                <div>
+                    <label class="text-[10px] text-gray-400 font-bold">ডলার রেট (১ USD = ? টাকা)</label>
+                    <input type="number" id="set-dollar-rate" class="w-full p-3 bg-gray-50 rounded-2xl border-none outline-none text-sm">
+                </div>
+            </div>
+
+            <div class="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm space-y-3">
+                <p class="text-xs font-bold text-gray-400 uppercase">📦 স্টেডফাস্ট কুরিয়ার API</p>
+                <p class="text-[10px] text-gray-400 -mt-2">স্টেডফাস্ট মার্চেন্ট প্যানেল থেকে API Key ও Secret Key নিয়ে বসান — অর্ডার লিস্ট থেকে সরাসরি পার্সেল পাঠাতে পারবেন</p>
+                <input type="text" id="set-steadfast-key" placeholder="API Key" class="w-full p-3 bg-gray-50 rounded-2xl border-none outline-none text-sm">
+                <input type="text" id="set-steadfast-secret" placeholder="Secret Key" class="w-full p-3 bg-gray-50 rounded-2xl border-none outline-none text-sm">
+            </div>
+
+            <div class="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm space-y-3">
+                <p class="text-xs font-bold text-gray-400 uppercase">অন্যান্য পণ্য (ক্রয় মূল্যসহ)</p>
+                <div id="other-products-list" class="space-y-2"></div>
+                <div class="flex gap-2">
+                    <input type="text" id="new-prod-name" placeholder="পণ্যের নাম" class="flex-1 p-3 bg-gray-50 rounded-2xl border-none outline-none text-sm">
+                    <input type="number" id="new-prod-price" placeholder="ক্রয় মূল্য" class="w-24 p-3 bg-gray-50 rounded-2xl border-none outline-none text-sm">
+                    <button onclick="addOtherProduct()" class="bg-slate-800 text-white px-4 rounded-2xl font-bold text-sm">+</button>
+                </div>
+            </div>
+
+            <div class="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm space-y-3">
+                <div class="flex justify-between items-center">
+                    <p class="text-sm font-bold">🌙 ডার্ক মোড</p>
+                    <label class="relative inline-block w-11 h-6">
+                        <input type="checkbox" id="set-theme-toggle" onchange="toggleTheme()" class="opacity-0 w-0 h-0">
+                        <span class="absolute inset-0 bg-gray-300 rounded-full cursor-pointer"></span>
+                    </label>
+                </div>
+                <div class="flex justify-between items-center pt-2 border-t border-gray-50">
+                    <p class="text-sm font-bold">🔒 PIN লক</p>
+                    <label class="relative inline-block w-11 h-6">
+                        <input type="checkbox" id="set-pin-toggle" onchange="togglePinLock()" class="opacity-0 w-0 h-0">
+                        <span class="absolute inset-0 bg-gray-300 rounded-full cursor-pointer"></span>
+                    </label>
+                </div>
+                <input type="tel" id="set-pin-value" maxlength="4" placeholder="৪ ডিজিটের পিন সেট করুন" class="hidden w-full p-3 bg-gray-50 rounded-2xl border-none outline-none text-sm">
+                <div class="flex justify-between items-center pt-2 border-t border-gray-50 opacity-50">
+                    <div>
+                        <p class="text-sm font-bold">👆 ফিঙ্গারপ্রিন্ট</p>
+                        <p class="text-[9px] text-gray-400">শুধু Android APK (HopWeb ব্রিজ) ভার্সনে কাজ করবে ভবিষ্যতে</p>
+                    </div>
+                    <label class="relative inline-block w-11 h-6">
+                        <input type="checkbox" disabled class="opacity-0 w-0 h-0">
+                        <span class="absolute inset-0 bg-gray-200 rounded-full cursor-not-allowed"></span>
+                    </label>
+                </div>
+            </div>
+
+            <button onclick="saveSettings()" class="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold text-sm shadow-lg">সব সেটিংস সেভ করুন</button>
+
+            <div class="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm space-y-3">
+                <p class="text-xs font-bold text-gray-400 uppercase">ব্যাকআপ ও রিস্টোর</p>
+                <button onclick="exportBackup()" class="w-full bg-slate-800 text-white py-3 rounded-2xl font-bold text-sm">📥 ব্যাকআপ ডাউনলোড (JSON)</button>
+                <label class="block w-full text-center bg-gray-50 py-3 rounded-2xl font-bold text-sm cursor-pointer">
+                    📤 ব্যাকআপ রিস্টোর করুন
+                    <input type="file" id="restore-file-input" accept=".json" class="hidden" onchange="importBackup(this)">
+                </label>
+            </div>
+
+            <button onclick="showConfirm('সব ডেটা মুছে যাবে! নিশ্চিত?', function(){ localStorage.clear(); location.reload(); })" class="w-full text-red-500 font-bold text-xs bg-red-50 py-3 rounded-xl">রিসেট অল ডেটা</button>
+        </section>
+
+    </main>
+
+    <nav class="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-md border-t border-gray-100 flex justify-around py-3 px-2 z-50">
+        <button onclick="showPage('dashboard')" id="nav-dashboard" class="nav-active flex flex-col items-center gap-1"><span class="text-lg">🏠</span><span class="text-[9px] font-bold">ড্যাশবোর্ড</span></button>
+        <button onclick="showPage('neworder')" id="nav-neworder" class="text-gray-400 flex flex-col items-center gap-1"><span class="text-lg">➕</span><span class="text-[9px] font-bold">নতুন</span></button>
+        <button onclick="showPage('orders')" id="nav-orders" class="text-gray-400 flex flex-col items-center gap-1"><span class="text-lg">📋</span><span class="text-[9px] font-bold">অর্ডার</span></button>
+        <button onclick="showPage('reports')" id="nav-reports" class="text-gray-400 flex flex-col items-center gap-1"><span class="text-lg">📊</span><span class="text-[9px] font-bold">রিপোর্ট</span></button>
+        <button onclick="showPage('settings')" id="nav-settings" class="text-gray-400 flex flex-col items-center gap-1"><span class="text-lg">⚙</span><span class="text-[9px] font-bold">সেটিংস</span></button>
+    </nav>
+
+    <!-- ============ EDIT ORDER MODAL ============ -->
+    <div id="modal-edit-order" class="modal-overlay">
+        <div class="modal-box">
+            <h3 class="text-lg font-bold mb-4">অর্ডার এডিট করুন</h3>
+            <div class="space-y-3">
+                <input type="text" id="edit-name" placeholder="নাম" class="w-full p-3 bg-gray-50 rounded-2xl border-none outline-none text-sm">
+                <input type="text" id="edit-mobile" placeholder="মোবাইল" class="w-full p-3 bg-gray-50 rounded-2xl border-none outline-none text-sm">
+                <input type="text" id="edit-address" placeholder="ঠিকানা" class="w-full p-3 bg-gray-50 rounded-2xl border-none outline-none text-sm">
+                <input type="number" id="edit-condition" placeholder="Condition Amount" class="w-full p-3 bg-gray-50 rounded-2xl border-none outline-none text-sm">
+                <div class="grid grid-cols-3 gap-2">
+                    <input type="number" id="edit-boro" placeholder="বড়" class="p-3 bg-gray-50 rounded-2xl border-none outline-none text-sm">
+                    <input type="number" id="edit-choto" placeholder="ছোট" class="p-3 bg-gray-50 rounded-2xl border-none outline-none text-sm">
+                    <input type="number" id="edit-ayna" placeholder="আয়না" class="p-3 bg-gray-50 rounded-2xl border-none outline-none text-sm">
+                </div>
+                <button onclick="saveEditOrder()" class="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold text-sm shadow-lg shadow-blue-200">সেভ করুন</button>
+                <button onclick="closeModal('modal-edit-order')" class="w-full text-gray-400 font-bold text-sm py-2">বাতিল</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============ CUSTOM CONFIRM / ALERT (Android WebView এ নেটিভ confirm()/alert() নির্ভরযোগ্য নয় বলে) ============ -->
+    <div id="modal-confirm" class="modal-overlay">
+        <div class="modal-box text-center">
+            <p id="confirm-message" class="text-base font-bold mb-6"></p>
+            <div class="grid grid-cols-2 gap-3">
+                <button onclick="handleConfirmCancel()" class="py-3 rounded-2xl font-bold text-sm bg-gray-100 text-gray-600">বাতিল</button>
+                <button onclick="handleConfirmYes()" class="py-3 rounded-2xl font-bold text-sm bg-red-500 text-white">নিশ্চিত করুন</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-alert" class="modal-overlay">
+        <div class="modal-box text-center">
+            <p id="alert-message" class="text-base font-bold mb-6" style="white-space:pre-line;"></p>
+            <button onclick="closeModal('modal-alert')" class="w-full py-3 rounded-2xl font-bold text-sm bg-slate-800 text-white">ঠিক আছে</button>
+        </div>
+    </div>
+
+
+    <script>
+        // ============ STATE ============
+        const STORAGE_KEY = 'twinkle_order_manager_v1';
+        let appState = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {
+            settings: {
+                shopName: 'Order Manager',
+                shopLogo: '',
+                currency: '৳',
+                dollarRate: 120,
+                largePlatePrice: 0,
+                smallPlatePrice: 0,
+                mirrorPrice: 0,
+                otherProducts: [],
+                deliveryCharge: 0,
+                packagingCost: 30,
+                steadfastApiKey: '',
+                steadfastSecretKey: '',
+                pinEnabled: false,
+                pin: '',
+                theme: 'light'
+            },
+            orders: [],
+            boosts: []
+        };
+        // Backward-compat safety
+        if (!appState.settings) appState.settings = {};
+        if (!appState.settings.otherProducts) appState.settings.otherProducts = [];
+        if (appState.settings.packagingCost === undefined) appState.settings.packagingCost = 30;
+        if (appState.settings.steadfastApiKey === undefined) appState.settings.steadfastApiKey = '';
+        if (appState.settings.steadfastSecretKey === undefined) appState.settings.steadfastSecretKey = '';
+        if (!appState.orders) appState.orders = [];
+        if (!appState.boosts) appState.boosts = [];
+
+        function saveDB() { localStorage.setItem(STORAGE_KEY, JSON.stringify(appState)); }
+        function fmt(n) { n = n || 0; return appState.settings.currency + Math.round(n).toLocaleString('bn-BD'); }
+
+        // ============ NAVIGATION ============
+        function showPage(id) {
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            document.getElementById('page-'+id).classList.add('active');
+            document.querySelectorAll('nav button').forEach(b => { b.classList.add('text-gray-400'); b.classList.remove('nav-active'); });
+            const navBtn = document.getElementById('nav-'+id);
+            if(navBtn) navBtn.classList.add('nav-active');
+
+            if(id === 'dashboard') renderDashboard();
+            if(id === 'orders') renderOrderList();
+            if(id === 'boost') renderBoostList();
+            if(id === 'reports') renderReport();
+            if(id === 'settings') loadSettingsForm();
+        }
+
+        function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+
+        // ============ CUSTOM ALERT / CONFIRM (Android WebView compatibility) ============
+        let _confirmYesCb = null;
+        let _confirmNoCb = null;
+        function showConfirm(message, onYes, onNo) {
+            document.getElementById('confirm-message').innerText = message;
+            _confirmYesCb = onYes || null;
+            _confirmNoCb = onNo || null;
+            document.getElementById('modal-confirm').classList.add('active');
+        }
+        function handleConfirmYes() {
+            document.getElementById('modal-confirm').classList.remove('active');
+            const cb = _confirmYesCb;
+            _confirmYesCb = null; _confirmNoCb = null;
+            if(cb) cb();
+        }
+        function handleConfirmCancel() {
+            document.getElementById('modal-confirm').classList.remove('active');
+            const cb = _confirmNoCb;
+            _confirmYesCb = null; _confirmNoCb = null;
+            if(cb) cb();
+        }
+        function showAlert(message) {
+            document.getElementById('alert-message').innerText = message;
+            document.getElementById('modal-alert').classList.add('active');
+        }
+
+        // ============ THEME ============
+        function applyTheme() {
+            const isDark = appState.settings.theme === 'dark';
+            document.body.classList.toggle('dark', isDark);
+            document.getElementById('theme-toggle-btn').innerText = isDark ? '☀' : '🌙';
+            const chk = document.getElementById('set-theme-toggle');
+            if(chk) chk.checked = isDark;
+        }
+        function toggleTheme() {
+            appState.settings.theme = appState.settings.theme === 'dark' ? 'light' : 'dark';
+            saveDB();
+            applyTheme();
+        }
+
+        // ============ DIGIT / TEXT HELPERS ============
+        function bnToEnDigits(str) {
+            const map = {'০':'0','১':'1','২':'2','৩':'3','৪':'4','৫':'5','৬':'6','৭':'7','৮':'8','৯':'9'};
+            return String(str).replace(/[০-৯]/g, d => map[d]);
+        }
+        function escapeRegex(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+        // ============ PARSER ============
+        function stripLineNoise(line) {
+            // লাইনের শুরুতে বুলেট/ইমোজি/সিম্বল থাকলে সরিয়ে দেয় (▪️👤📍📞💵 ইত্যাদি)
+            return line.replace(/^[\s▪️○●♦️★☆✦🔹🔸➤➡️👉👤📍📞💵🏠]+/, '');
+        }
+
+        function splitIntoBlocks(text) {
+            // ---- মোড ১: WhatsApp এক্সপোর্ট ফরম্যাট শনাক্ত হলে "[তারিখ, সময়] প্রেরক:" দিয়ে ভাগ করা ----
+            const waMsgSrc = '\\[\\d{1,2}\\/\\d{1,2},\\s*\\d{1,2}:\\d{2}\\s*(?:AM|PM|am|pm)?\\]\\s*[^:\\n]+:';
+            const waMsgRe = new RegExp(waMsgSrc);
+            if(waMsgRe.test(text)) {
+                const parts = text.split(new RegExp('(?=' + waMsgSrc + ')', 'g')).map(s => s.trim()).filter(Boolean);
+                const stripped = parts.map(p => p.replace(new RegExp('^' + waMsgSrc + '\\s*'), '')).map(s => s.trim()).filter(Boolean);
+                if(stripped.length) return stripped;
+            }
+
+            // ---- মোড ২: সাধারণ পেস্ট করা টেক্সট - লেবেল ট্র্যাক করে ভাগ করা ----
+            const lines = text.split(/\r?\n/);
+            const labelRe = {
+                name: /^\s*(?:নাম|Name)\s*:?\s*(.*)$/i,
+                mobile: /^\s*(?:মোবাইল|Mobile|Contact|ফোন|Phone)\s*:?\s*(.*)$/i,
+                address: /^\s*(?:ঠিকানা|Address)\s*:?\s*(.*)$/i,
+                condition: /^\s*(?:Condition|কন্ডিশন|শর্ত)\s*:?\s*(.*)$/i
+            };
+            const blocks = [];
+            let current = [];
+            let seen = { name: false, mobile: false, address: false, condition: false };
+            function matchLabel(line) {
+                for(const key in labelRe) { if(labelRe[key].test(line)) return key; }
+                return null;
+            }
+            lines.forEach(line => {
+                if(!line.trim()) { current.push(line); return; }
+                const label = matchLabel(line);
+                if(label) {
+                    const startsNew = seen[label] || seen.condition;
+                    if(startsNew && current.some(l => l.trim())) {
+                        blocks.push(current.join('\n'));
+                        current = [];
+                        seen = { name: false, mobile: false, address: false, condition: false };
+                    }
+                    seen[label] = true;
+                }
+                current.push(line);
+            });
+            if(current.some(l => l.trim())) blocks.push(current.join('\n'));
+            const trimmed = blocks.map(b => b.trim()).filter(Boolean);
+            return trimmed.length ? trimmed : [text.trim()];
+        }
+
+        function classifyLine(line) {
+            const nameM = line.match(/^(?:নাম|Name)\s*(?:নং|no\.?|number)?\s*[:.\-–—।]*\s*(.*)$/i);
+            if(nameM) return { type: 'name', value: nameM[1].trim() };
+            const mobileM = line.match(/^(?:মোবাইল|Mobile|Contact|ফোন|Phone)\s*(?:নং|no\.?|number)?\s*[:.\-–—।]*\s*(.*)$/i);
+            if(mobileM) return { type: 'mobile', value: mobileM[1].trim() };
+            const addrM = line.match(/^(?:ঠিকানা|Address)\s*[:.\-–—।]*\s*(.*)$/i);
+            if(addrM) return { type: 'address', value: addrM[1].trim() };
+            const condM = line.match(/^(?:Condition|কন্ডিশন|শর্ত)\s*(?:\([^)]*\))?\s*[:.\-–—।]*\s*৳?\s*(.*)$/i);
+            if(condM) return { type: 'condition', value: condM[1].trim() };
+            if(/^(বড়|ছোট|আয়না)\b/i.test(line)) return { type: 'quantity', value: line.trim() };
+            if(!line.trim()) return { type: 'blank', value: '' };
+            return { type: 'plain', value: line.trim() };
+        }
+
+        function parseOrderBlock(rawBlock) {
+            const cleanedLines = rawBlock.split(/\r?\n/).map(stripLineNoise);
+            const block = bnToEnDigits(cleanedLines.join('\n'));
+            const lines = block.split(/\r?\n/);
+            const classified = lines.map(classifyLine);
+
+            let name = '', mobile = '', conditionAmount = 0;
+            let addressLines = [];
+            let addressLabelSeen = false;
+
+            function lookAheadValue(startIdx) {
+                for(let j = startIdx + 1; j < classified.length; j++) {
+                    if(classified[j].type === 'blank') continue;
+                    if(classified[j].type === 'plain') { const v = classified[j].value; classified[j].type = 'consumed'; return v; }
+                    break;
+                }
+                return '';
+            }
+
+            classified.forEach((c, i) => {
+                if(c.type === 'name') {
+                    const v = c.value || lookAheadValue(i);
+                    if(v && !name) name = v;
+                } else if(c.type === 'mobile') {
+                    const v = c.value || lookAheadValue(i);
+                    const m = v.match(/[0-9+\-\s]{9,15}/);
+                    if(!mobile) mobile = m ? m[0].trim() : v;
+                } else if(c.type === 'condition') {
+                    const v = c.value || lookAheadValue(i);
+                    const m = v.match(/[0-9][0-9,\.]*/);
+                    if(m) conditionAmount = parseFloat(m[0].replace(/,/g,''));
+                } else if(c.type === 'address') {
+                    addressLabelSeen = true;
+                    if(c.value) addressLines.push(c.value);
+                    for(let j = i + 1; j < classified.length; j++) {
+                        if(classified[j].type === 'plain') { addressLines.push(classified[j].value); classified[j].type = 'consumed'; }
+                        else if(classified[j].type === 'blank') { continue; }
+                        else break;
+                    }
+                }
+            });
+
+            // অলেবেলড (plain) লাইন যা কোথাও কনজিউম হয়নি - পজিশনাল অনুমান দিয়ে নাম/ঠিকানা/মোবাইল বের করার চেষ্টা
+            let unlabeled = classified.filter(c => c.type === 'plain').map(c => c.value);
+
+            if(!mobile && unlabeled.length) {
+                for(let i = 0; i < unlabeled.length; i++) {
+                    const m = unlabeled[i].match(/\b01[0-9]{9}\b/);
+                    if(m) {
+                        mobile = m[0];
+                        const cleaned = unlabeled[i].replace(m[0], '').replace(/[,.\s]+$/,'').trim();
+                        if(cleaned) unlabeled[i] = cleaned; else unlabeled.splice(i,1);
+                        break;
+                    }
+                }
+            }
+
+            if(!addressLabelSeen && unlabeled.length) {
+                if(!name) {
+                    if(unlabeled.length === 1) {
+                        const parts = unlabeled[0].split(',');
+                        if(parts.length > 1) { name = parts[0].trim(); addressLines = [parts.slice(1).join(',').trim()]; }
+                        else { addressLines = [unlabeled[0]]; }
+                    } else {
+                        name = unlabeled[0];
+                        addressLines = unlabeled.slice(1);
+                    }
+                } else {
+                    addressLines = unlabeled;
+                }
+            }
+
+            const address = addressLines.map(l => l.trim()).filter(Boolean).join(', ');
+
+            const boroM = block.match(/বড়(?:\s*প্লেট)?\s*[:\-]?\s*([0-9]+)/i);
+            const chotoM = block.match(/ছোট(?:\s*প্লেট)?\s*[:\-]?\s*([0-9]+)/i);
+            const aynaM = block.match(/আয়না\s*[:\-]?\s*([0-9]+)/i);
+            const boro = boroM ? parseInt(boroM[1]) : 0;
+            const choto = chotoM ? parseInt(chotoM[1]) : 0;
+            const ayna = aynaM ? parseInt(aynaM[1]) : 0;
+
+            const others = {};
+            (appState.settings.otherProducts || []).forEach(p => {
+                const re = new RegExp(escapeRegex(p.name) + '\\s*[:\\-]?\\s*([0-9]+)', 'i');
+                const m = block.match(re);
+                if(m) others[p.name] = parseInt(m[1]);
+            });
+
+            return {
+                name: (name||'').trim(), mobile: (mobile||'').trim(), address: address.trim(), conditionAmount,
+                items: { boro, choto, ayna, others },
+                rawText: rawBlock.trim()
+            };
+        }
+
+        function computeOrderTotals(order) {
+            const s = appState.settings;
+            let productTotal = (order.items.boro||0)*s.largePlatePrice + (order.items.choto||0)*s.smallPlatePrice + (order.items.ayna||0)*s.mirrorPrice;
+            Object.entries(order.items.others||{}).forEach(([name, qty]) => {
+                const prod = (s.otherProducts||[]).find(p => p.name === name);
+                if(prod) productTotal += qty * prod.price;
+            });
+            const deliveryCharge = s.deliveryCharge || 0;
+            const packagingCost = s.packagingCost || 0;
+
+            if(order.status === 'cancelled') {
+                // ক্যান্সেল/ফেরত অর্ডার: কোনো টাকা পাওয়া যায়নি, কিন্তু ডেলিভারি ও প্যাকেজিং খরচ চলে গেছে।
+                // পণ্য ফেরত পাওয়া গেছে ধরে নিয়ে পণ্যের ক্রয় মূল্য এখানে ক্ষতি হিসেবে গণনা করা হচ্ছে না।
+                const netAmount = -deliveryCharge;
+                const profit = -deliveryCharge - packagingCost;
+                return { productTotal, deliveryCharge, packagingCost, netAmount, profit };
+            }
+
+            const netAmount = (order.conditionAmount||0) - deliveryCharge;
+            const profit = netAmount - productTotal - packagingCost;
+            return { productTotal, deliveryCharge, packagingCost, netAmount, profit };
+        }
+
+        function itemsToString(order) {
+            const parts = [];
+            if(order.items.boro) parts.push('বড় ' + order.items.boro);
+            if(order.items.choto) parts.push('ছোট ' + order.items.choto);
+            if(order.items.ayna) parts.push('আয়না ' + order.items.ayna);
+            Object.entries(order.items.others||{}).forEach(([nm,q]) => parts.push(nm + ' ' + q));
+            return parts.length ? parts.join(', ') : 'কোনো পণ্য শনাক্ত হয়নি';
+        }
+
+        let parsedPreview = [];
+        function runParse() {
+            const text = document.getElementById('paste-input').value.trim();
+            if(!text) return showAlert('কিছু পেস্ট করুন!');
+            const blocks = splitIntoBlocks(text);
+            parsedPreview = blocks.map(b => parseOrderBlock(b));
+
+            document.getElementById('parse-count').innerText = parsedPreview.length;
+            const listEl = document.getElementById('parse-preview-list');
+            listEl.innerHTML = parsedPreview.map((o, i) => `
+                <div class="bg-white p-4 rounded-3xl border border-gray-100 shadow-sm space-y-1">
+                    <div class="flex justify-between items-start">
+                        <p class="text-sm font-bold">${o.name || '<span class="text-red-500">নাম পাওয়া যায়নি</span>'}</p>
+                        <p class="text-xs text-gray-400">#${i+1}</p>
+                    </div>
+                    <p class="text-xs text-gray-500">📱 ${o.mobile || '<span class="text-red-400">মোবাইল নেই</span>'}</p>
+                    <p class="text-xs text-gray-500">📍 ${o.address || '<span class="text-red-400">ঠিকানা নেই</span>'}</p>
+                    <p class="text-xs text-gray-500">💰 Condition: ${o.conditionAmount || 0}</p>
+                    <p class="text-xs text-gray-500">📦 ${itemsToString(o)}</p>
+                </div>
+            `).join('');
+            document.getElementById('parse-preview-box').classList.remove('hidden');
+        }
+
+        function cancelParsePreview() {
+            parsedPreview = [];
+            document.getElementById('parse-preview-box').classList.add('hidden');
+            document.getElementById('paste-input').value = '';
+        }
+
+        function confirmSaveParsed() {
+            if(parsedPreview.length === 0) return;
+            const now = new Date();
+            parsedPreview.forEach((o, i) => {
+                const totals = computeOrderTotals(o);
+                appState.orders.push({
+                    id: Date.now() + i,
+                    name: o.name, mobile: o.mobile, address: o.address,
+                    conditionAmount: o.conditionAmount, items: o.items, rawText: o.rawText, status: 'active',
+                    productTotal: totals.productTotal, deliveryCharge: totals.deliveryCharge, packagingCost: totals.packagingCost,
+                    netAmount: totals.netAmount, profit: totals.profit,
+                    dateISO: now.toISOString(),
+                    date: `${now.getDate()}/${now.getMonth()+1}/${now.getFullYear()}`,
+                    time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                });
+            });
+            saveDB();
+            showAlert(parsedPreview.length + ' টি অর্ডার সেভ হয়েছে!');
+            cancelParsePreview();
+            showPage('orders');
+        }
+
+        // ============ ORDER LIST / CRUD ============
+        function renderOrderList() {
+            const search = (document.getElementById('order-search').value || '').toLowerCase();
+            const dateFilter = document.getElementById('order-date-filter').value;
+            let list = appState.orders;
+            if(search) {
+                list = list.filter(o =>
+                    (o.name||'').toLowerCase().includes(search) ||
+                    (o.mobile||'').toLowerCase().includes(search) ||
+                    (o.address||'').toLowerCase().includes(search) ||
+                    String(o.conditionAmount||'').includes(search)
+                );
+            }
+            if(dateFilter) {
+                list = list.filter(o => o.dateISO && o.dateISO.slice(0,10) === dateFilter);
+            }
+            const el = document.getElementById('order-list');
+            el.innerHTML = list.length === 0 ? `<p class="text-center py-16 text-gray-300 font-bold">কোনো অর্ডার নেই</p>` :
+            [...list].reverse().map(o => `
+                <div class="bg-white p-4 rounded-3xl border ${o.status==='cancelled' ? 'border-red-200' : 'border-gray-100'} shadow-sm space-y-2 ${o.status==='cancelled' ? 'opacity-75' : ''}">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="text-sm font-bold">${o.name || 'নাম নেই'} ${o.status==='cancelled' ? '<span class="text-[9px] font-bold text-red-500 bg-red-50 px-2 py-0.5 rounded-full">❌ ক্যান্সেল</span>' : ''}</p>
+                            <p class="text-[10px] text-gray-400">📱 ${o.mobile || '-'}</p>
+                        </div>
+                        <p class="text-[10px] text-gray-400">${o.date}</p>
+                    </div>
+                    <p class="text-xs text-gray-500">📍 ${o.address || '-'}</p>
+                    <p class="text-xs text-gray-500">📦 ${itemsToString(o)}</p>
+                    ${o.steadfastId ? `
+                    <div class="bg-teal-50 rounded-2xl px-3 py-2 flex justify-between items-center">
+                        <div>
+                            <p class="text-[9px] text-teal-600 font-bold uppercase">স্টেডফাস্ট আইডি</p>
+                            <p class="text-xs font-black text-teal-700">${o.steadfastId} ${o.steadfastStatus ? '• ' + o.steadfastStatus : ''}</p>
+                        </div>
+                        <button onclick="checkSteadfastStatus(${o.id})" class="text-[10px] font-bold text-teal-600 bg-white px-2 py-1 rounded-lg">স্ট্যাটাস চেক</button>
+                    </div>` : ''}
+                    <div class="flex justify-between items-center pt-2 border-t border-gray-50">
+                        <div>
+                            <p class="text-[9px] text-gray-400 font-bold uppercase">${o.status==='cancelled' ? 'ক্ষতি' : 'নেট প্রাপ্য'}</p>
+                            <p class="text-base font-black ${o.netAmount>=0?'text-green-600':'text-red-500'}">${fmt(o.netAmount)}</p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-[9px] text-gray-400 font-bold uppercase">লাভ</p>
+                            <p class="text-base font-black ${o.profit>=0?'text-green-600':'text-red-500'}">${fmt(o.profit)}</p>
+                        </div>
+                    </div>
+                    ${!o.steadfastId && o.status !== 'cancelled' ? `<button onclick="sendToSteadfast(${o.id})" class="w-full bg-teal-50 text-teal-600 py-2 rounded-xl text-xs font-bold">📦 স্টেডফাস্টে পাঠান</button>` : ''}
+                    <div class="grid grid-cols-2 gap-2 pt-1">
+                        <button onclick="editOrder(${o.id})" class="bg-blue-50 text-blue-600 py-2 rounded-xl text-xs font-bold">Edit</button>
+                        <button onclick="printOrder(${o.id})" class="bg-gray-50 text-gray-600 py-2 rounded-xl text-xs font-bold">Print</button>
+                        <button onclick="toggleOrderCancel(${o.id})" class="${o.status==='cancelled' ? 'bg-green-50 text-green-600' : 'bg-orange-50 text-orange-500'} py-2 rounded-xl text-xs font-bold">${o.status==='cancelled' ? 'পুনরায় সক্রিয়' : 'ক্যান্সেল করুন'}</button>
+                        <button onclick="deleteOrder(${o.id})" class="bg-red-50 text-red-500 py-2 rounded-xl text-xs font-bold">Delete</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // ============ STEADFAST COURIER API ============
+        const STEADFAST_BASE = 'https://portal.packzy.com/api/v1';
+
+        async function sendToSteadfast(id) {
+            const o = appState.orders.find(x => x.id === id);
+            if(!o) return;
+            const s = appState.settings;
+            if(!s.steadfastApiKey || !s.steadfastSecretKey) {
+                showAlert('আগে সেটিংসে গিয়ে স্টেডফাস্ট API Key ও Secret Key বসান!');
+                return;
+            }
+            if(!o.mobile) { showAlert('এই অর্ডারে মোবাইল নম্বর নেই, স্টেডফাস্টে পাঠানো যাবে না!'); return; }
+
+            // মোবাইল নম্বর থেকে ড্যাশ/স্পেস/অন্য কিছু বাদ দিয়ে শুধু সংখ্যা রাখা হচ্ছে (স্টেডফাস্ট শুধু ১১ ডিজিট চায়)
+            const cleanPhone = bnToEnDigits(o.mobile).replace(/[^0-9]/g, '');
+            if(cleanPhone.length !== 11) {
+                showAlert('মোবাইল নম্বরটা সঠিক ফরম্যাটে নেই (১১ ডিজিট হওয়া দরকার): ' + o.mobile + '\n\nEdit বাটনে গিয়ে নম্বরটা ঠিক করে আবার চেষ্টা করুন।');
+                return;
+            }
+
+            try {
+                const res = await fetch(STEADFAST_BASE + '/create_order', {
+                    method: 'POST',
+                    headers: {
+                        'Api-Key': s.steadfastApiKey,
+                        'Secret-Key': s.steadfastSecretKey,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        invoice: String(o.id),
+                        recipient_name: o.name || 'N/A',
+                        recipient_phone: cleanPhone,
+                        recipient_address: o.address || 'N/A',
+                        cod_amount: o.conditionAmount || 0,
+                        note: itemsToString(o)
+                    })
+                });
+                const data = await res.json();
+                if(data && data.consignment && data.consignment.consignment_id) {
+                    o.steadfastId = data.consignment.consignment_id;
+                    o.steadfastTrackingCode = data.consignment.tracking_code || '';
+                    o.steadfastStatus = data.consignment.status || 'pending';
+                    saveDB();
+                    renderOrderList();
+                    showAlert('স্টেডফাস্টে পার্সেল পাঠানো হয়েছে! Consignment ID: ' + o.steadfastId);
+                } else {
+                    // errors অবজেক্ট (validation) বা message ফিল্ড, যেটা পাওয়া যায় সেটা বিস্তারিত দেখানো হচ্ছে
+                    let detail = '';
+                    if(data && data.errors) {
+                        detail = Object.entries(data.errors).map(([field, msgs]) => field + ': ' + (Array.isArray(msgs) ? msgs.join(', ') : msgs)).join('\n');
+                    } else if(data && data.message) {
+                        detail = data.message;
+                    } else {
+                        detail = 'অজানা সমস্যা হয়েছে। রেসপন্স: ' + JSON.stringify(data).slice(0, 200);
+                    }
+                    showAlert('স্টেডফাস্ট এরর:\n' + detail);
+                }
+            } catch(err) {
+                showAlert('স্টেডফাস্টে পাঠানো যায়নি। সম্ভবত CORS ব্লক করেছে (ব্রাউজার থেকে সরাসরি কল সাপোর্ট নাও করতে পারে) — এই ক্ষেত্রে একটা রিলে সেটআপ লাগবে, Claude-কে জানান।');
+            }
+        }
+
+        async function checkSteadfastStatus(id) {
+            const o = appState.orders.find(x => x.id === id);
+            if(!o || !o.steadfastId) return;
+            const s = appState.settings;
+            try {
+                const res = await fetch(STEADFAST_BASE + '/status_by_cid/' + o.steadfastId, {
+                    method: 'GET',
+                    headers: { 'Api-Key': s.steadfastApiKey, 'Secret-Key': s.steadfastSecretKey }
+                });
+                const data = await res.json();
+                if(data && data.delivery_status) {
+                    o.steadfastStatus = data.delivery_status;
+                    saveDB();
+                    renderOrderList();
+                    showAlert('বর্তমান স্ট্যাটাস: ' + data.delivery_status);
+                } else {
+                    showAlert('স্ট্যাটাস পাওয়া যায়নি।');
+                }
+            } catch(err) {
+                showAlert('স্ট্যাটাস চেক করা যায়নি (CORS সমস্যা হতে পারে)।');
+            }
+        }
+
+        function toggleOrderCancel(id) {
+            const o = appState.orders.find(x => x.id === id);
+            if(!o) return;
+            const willCancel = o.status !== 'cancelled';
+            const msg = willCancel
+                ? 'এই অর্ডারটি ক্যান্সেল/ফেরত হিসেবে চিহ্নিত করবেন? ডেলিভারি ও প্যাকেজিং খরচ ক্ষতি হিসেবে গণনা হবে।'
+                : 'অর্ডারটি আবার সক্রিয় (স্বাভাবিক) হিসেবে ফিরিয়ে আনবেন?';
+            showConfirm(msg, function() {
+                o.status = willCancel ? 'cancelled' : 'active';
+                const totals = computeOrderTotals(o);
+                o.productTotal = totals.productTotal;
+                o.deliveryCharge = totals.deliveryCharge;
+                o.packagingCost = totals.packagingCost;
+                o.netAmount = totals.netAmount;
+                o.profit = totals.profit;
+                saveDB();
+                renderOrderList();
+                renderDashboard();
+            });
+        }
+
+        let editingOrderId = null;
+        function editOrder(id) {
+            const o = appState.orders.find(x => x.id === id);
+            if(!o) return;
+            editingOrderId = id;
+            document.getElementById('edit-name').value = o.name || '';
+            document.getElementById('edit-mobile').value = o.mobile || '';
+            document.getElementById('edit-address').value = o.address || '';
+            document.getElementById('edit-condition').value = o.conditionAmount || 0;
+            document.getElementById('edit-boro').value = o.items.boro || 0;
+            document.getElementById('edit-choto').value = o.items.choto || 0;
+            document.getElementById('edit-ayna').value = o.items.ayna || 0;
+            document.getElementById('modal-edit-order').classList.add('active');
+        }
+
+        function saveEditOrder() {
+            const o = appState.orders.find(x => x.id === editingOrderId);
+            if(!o) return;
+            o.name = document.getElementById('edit-name').value.trim();
+            o.mobile = document.getElementById('edit-mobile').value.trim();
+            o.address = document.getElementById('edit-address').value.trim();
+            o.conditionAmount = parseFloat(document.getElementById('edit-condition').value) || 0;
+            o.items.boro = parseInt(document.getElementById('edit-boro').value) || 0;
+            o.items.choto = parseInt(document.getElementById('edit-choto').value) || 0;
+            o.items.ayna = parseInt(document.getElementById('edit-ayna').value) || 0;
+            const totals = computeOrderTotals(o);
+            o.productTotal = totals.productTotal;
+            o.deliveryCharge = totals.deliveryCharge;
+            o.packagingCost = totals.packagingCost;
+            o.netAmount = totals.netAmount;
+            o.profit = totals.profit;
+            saveDB();
+            closeModal('modal-edit-order');
+            renderOrderList();
+            renderDashboard();
+        }
+
+        function deleteOrder(id) {
+            showConfirm('এই অর্ডারটি ডিলিট করবেন?', function() {
+                appState.orders = appState.orders.filter(o => o.id !== id);
+                saveDB();
+                renderOrderList();
+                renderDashboard();
+            });
+        }
+
+        // ============ SHIPPING LABEL (ছবি হিসেবে ডাউনলোড - WebView-তে window.print() নির্ভরযোগ্য নয় বলে) ============
+        function wrapCanvasText(ctx, text, x, y, maxWidth, lineHeight) {
+            const words = String(text).split(' ');
+            let line = '';
+            let curY = y;
+            for(let i = 0; i < words.length; i++) {
+                const testLine = line + words[i] + ' ';
+                if(ctx.measureText(testLine).width > maxWidth && line !== '') {
+                    ctx.fillText(line.trim(), x, curY);
+                    line = words[i] + ' ';
+                    curY += lineHeight;
+                } else {
+                    line = testLine;
+                }
+            }
+            ctx.fillText(line.trim(), x, curY);
+            return curY + lineHeight;
+        }
+
+        function loadImageAsync(src) {
+            return new Promise((resolve) => {
+                if(!src) { resolve(null); return; }
+                const img = new Image();
+                img.onload = () => resolve(img);
+                img.onerror = () => resolve(null);
+                img.src = src;
+            });
+        }
+
+        async function printOrder(id) {
+            const o = appState.orders.find(x => x.id === id);
+            if(!o) return;
+            const s = appState.settings;
+            const logoImg = await loadImageAsync(s.shopLogo);
+
+            const W = 640, H = 960;
+            const canvas = document.createElement('canvas');
+            canvas.width = W; canvas.height = H;
+            const ctx = canvas.getContext('2d');
+
+            // background
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, W, H);
+            ctx.strokeStyle = '#1e293b';
+            ctx.lineWidth = 4;
+            ctx.strokeRect(8, 8, W-16, H-16);
+
+            let y = 56;
+            const textStartX = logoImg ? 108 : 32;
+
+            // logo (circular clip)
+            if(logoImg) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(66, y-14, 34, 0, Math.PI*2);
+                ctx.closePath();
+                ctx.clip();
+                ctx.drawImage(logoImg, 32, y-48, 68, 68);
+                ctx.restore();
+            }
+
+            // shop name header
+            ctx.fillStyle = '#1e293b';
+            ctx.font = 'bold 30px sans-serif';
+            ctx.fillText(s.shopName || 'Order Manager', textStartX, y);
+            y += 30;
+            ctx.strokeStyle = '#cbd5e1';
+            ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(32, y); ctx.lineTo(W-32, y); ctx.stroke();
+            y += 36;
+
+            // Steadfast Consignment ID (প্রমিনেন্ট বক্স, থাকলে)
+            if(o.steadfastId) {
+                ctx.fillStyle = '#f0fdfa';
+                ctx.fillRect(32, y-26, W-64, 44);
+                ctx.strokeStyle = '#0d9488';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(32, y-26, W-64, 44);
+                ctx.fillStyle = '#0d9488';
+                ctx.font = 'bold 20px sans-serif';
+                ctx.fillText('Steadfast Consignment ID: ' + o.steadfastId, 46, y+2);
+                y += 60;
+            }
+
+            // COD badge
+            ctx.fillStyle = '#dc2626';
+            ctx.fillRect(32, y-28, 110, 38);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 20px sans-serif';
+            ctx.fillText('COD', 55, y-2);
+            ctx.fillStyle = '#1e293b';
+            ctx.font = 'bold 26px sans-serif';
+            ctx.fillText(fmt(o.conditionAmount), 160, y);
+            y += 55;
+
+            // recipient name
+            ctx.font = 'bold 26px sans-serif';
+            ctx.fillStyle = '#1e293b';
+            y = wrapCanvasText(ctx, 'প্রাপক: ' + (o.name || 'নাম নেই'), 32, y, W-64, 34);
+            y += 8;
+
+            // phone
+            ctx.font = 'bold 24px sans-serif';
+            ctx.fillText('মোবাইল: ' + (o.mobile || '-'), 32, y);
+            y += 46;
+
+            // address label
+            ctx.font = 'bold 18px sans-serif';
+            ctx.fillStyle = '#64748b';
+            ctx.fillText('ঠিকানা:', 32, y);
+            y += 30;
+            ctx.font = '22px sans-serif';
+            ctx.fillStyle = '#1e293b';
+            y = wrapCanvasText(ctx, o.address || '-', 32, y, W-64, 30);
+            y += 24;
+
+            ctx.strokeStyle = '#cbd5e1';
+            ctx.beginPath(); ctx.moveTo(32, y); ctx.lineTo(W-32, y); ctx.stroke();
+            y += 36;
+
+            // items
+            ctx.font = 'bold 18px sans-serif';
+            ctx.fillStyle = '#64748b';
+            ctx.fillText('পণ্য:', 32, y);
+            y += 28;
+            ctx.font = '22px sans-serif';
+            ctx.fillStyle = '#1e293b';
+            y = wrapCanvasText(ctx, itemsToString(o), 32, y, W-64, 30);
+            y += 20;
+
+            ctx.strokeStyle = '#cbd5e1';
+            ctx.beginPath(); ctx.moveTo(32, y); ctx.lineTo(W-32, y); ctx.stroke();
+            y += 40;
+
+            // order id / date / tracking code footer
+            ctx.font = '18px sans-serif';
+            ctx.fillStyle = '#94a3b8';
+            ctx.fillText('অর্ডার আইডি: ' + o.id, 32, y);
+            y += 26;
+            ctx.fillText('তারিখ: ' + o.date + ' • ' + o.time, 32, y);
+            if(o.steadfastTrackingCode) {
+                y += 26;
+                ctx.fillText('Tracking Code: ' + o.steadfastTrackingCode, 32, y);
+            }
+
+            // trigger download
+            const link = document.createElement('a');
+            link.href = canvas.toDataURL('image/png');
+            link.download = 'label_' + o.id + '.png';
+            link.click();
+
+            showAlert('লেবেলের ছবি ডাউনলোড হয়েছে! গ্যালারি থেকে খুলে যেকোনো প্রিন্টার অ্যাপ দিয়ে প্রিন্ট করে পার্সেলে লাগাতে পারবেন।');
+        }
+
+        // ============ FACEBOOK BOOST ============
+        function addBoost() {
+            const dollarInput = document.getElementById('boost-dollar');
+            const dollarAmount = parseFloat(dollarInput.value);
+            if(!dollarAmount || dollarAmount <= 0) return showAlert('সঠিক ডলার এমাউন্ট দিন!');
+            const bdtAmount = dollarAmount * (appState.settings.dollarRate || 0);
+            const now = new Date();
+            appState.boosts.push({
+                id: Date.now(), dollarAmount, bdtAmount, dateISO: now.toISOString(),
+                date: `${now.getDate()}/${now.getMonth()+1}/${now.getFullYear()}`
+            });
+            saveDB();
+            dollarInput.value = '';
+            renderBoostList();
+            renderDashboard();
+        }
+
+        function deleteBoost(id) {
+            showConfirm('এই বুস্ট এন্ট্রি ডিলিট করবেন?', function() {
+                appState.boosts = appState.boosts.filter(b => b.id !== id);
+                saveDB();
+                renderBoostList();
+                renderDashboard();
+            });
+        }
+
+        function renderBoostList() {
+            const totalDollar = appState.boosts.reduce((s,b)=>s+b.dollarAmount,0);
+            const total = appState.boosts.reduce((s,b)=>s+b.bdtAmount,0);
+            document.getElementById('boost-total-dollar').innerText = '$' + totalDollar.toFixed(2).replace(/\.00$/,'');
+            document.getElementById('boost-total').innerText = fmt(total);
+            const el = document.getElementById('boost-list');
+            el.innerHTML = appState.boosts.length === 0 ? `<p class="text-center py-10 text-gray-300 font-bold text-sm">কোনো বুস্ট এন্ট্রি নেই</p>` :
+            [...appState.boosts].reverse().map(b => `
+                <div class="bg-white p-4 rounded-3xl flex justify-between items-center shadow-sm border border-gray-50">
+                    <div>
+                        <p class="text-sm font-bold">$${b.dollarAmount}</p>
+                        <p class="text-[10px] text-gray-400">${b.date}</p>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <p class="text-base font-black text-red-500">${fmt(b.bdtAmount)}</p>
+                        <button onclick="deleteBoost(${b.id})" class="text-gray-300 hover:text-red-400">✕</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // ============ DASHBOARD ============
+        function renderDashboard() {
+            document.getElementById('header-shop-name').innerText = appState.settings.shopName;
+            if(appState.settings.shopLogo) {
+                document.getElementById('header-logo').src = appState.settings.shopLogo;
+                document.getElementById('header-logo').classList.remove('hidden');
+            }
+            const orders = appState.orders;
+            const totalCondition = orders.reduce((s,o)=>s+(o.conditionAmount||0),0);
+            const totalDelivery = orders.reduce((s,o)=>s+(o.deliveryCharge||0),0);
+            const totalNet = orders.reduce((s,o)=>s+(o.netAmount||0),0);
+            const totalProfit = orders.reduce((s,o)=>s+(o.profit||0),0);
+            const totalBoost = appState.boosts.reduce((s,b)=>s+b.bdtAmount,0);
+            document.getElementById('dash-net-profit').innerText = fmt(totalProfit - totalBoost);
+            document.getElementById('dash-total-sales').innerText = fmt(totalNet);
+            document.getElementById('dash-total-boost').innerText = fmt(totalBoost);
+            document.getElementById('dash-total-orders').innerText = orders.length;
+            document.getElementById('dash-total-condition').innerText = fmt(totalCondition);
+            document.getElementById('dash-total-delivery').innerText = fmt(totalDelivery);
+
+            const recentEl = document.getElementById('dash-recent-orders');
+            const recent = [...orders].reverse().slice(0,5);
+            recentEl.innerHTML = recent.length === 0 ? `<p class="text-center py-10 text-gray-300 font-bold text-sm">কোনো অর্ডার নেই</p>` :
+            recent.map(o => `
+                <div class="bg-white p-4 rounded-3xl flex justify-between items-center shadow-sm border border-gray-50">
+                    <div>
+                        <p class="text-sm font-bold">${o.name || 'নাম নেই'}</p>
+                        <p class="text-[10px] text-gray-400">${itemsToString(o)}</p>
+                    </div>
+                    <p class="text-base font-black ${o.netAmount>=0?'text-green-600':'text-red-500'}">${fmt(o.netAmount)}</p>
+                </div>
+            `).join('');
+        }
+
+        // ============ REPORTS ============
+        let currentReportPreset = 'today';
+        function setReportPreset(preset) {
+            currentReportPreset = preset;
+            ['today','week','month','custom'].forEach(p => {
+                document.getElementById('rp-'+p).className = 'py-2 rounded-xl text-[11px] font-bold ' + (p===preset ? 'bg-slate-800 text-white' : 'bg-gray-100 text-gray-500');
+            });
+            document.getElementById('report-custom-range').classList.toggle('hidden', preset !== 'custom');
+            renderReport();
+        }
+
+        function getReportRange() {
+            const now = new Date();
+            let start, end;
+            if(currentReportPreset === 'today') {
+                start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                end = new Date(start); end.setDate(end.getDate()+1);
+            } else if(currentReportPreset === 'week') {
+                const day = now.getDay();
+                start = new Date(now.getFullYear(), now.getMonth(), now.getDate()-day);
+                end = new Date(start); end.setDate(end.getDate()+7);
+            } else if(currentReportPreset === 'month') {
+                start = new Date(now.getFullYear(), now.getMonth(), 1);
+                end = new Date(now.getFullYear(), now.getMonth()+1, 1);
+            } else {
+                const s = document.getElementById('report-start-date').value;
+                const e = document.getElementById('report-end-date').value;
+                start = s ? new Date(s) : new Date(0);
+                end = e ? new Date(new Date(e).getTime() + 86400000) : new Date();
+            }
+            return { start, end };
+        }
+
+        function getFilteredOrdersAndBoosts() {
+            const { start, end } = getReportRange();
+            const orders = appState.orders.filter(o => {
+                const d = new Date(o.dateISO);
+                return d >= start && d < end;
+            });
+            const boosts = appState.boosts.filter(b => {
+                const d = new Date(b.dateISO);
+                return d >= start && d < end;
+            });
+            return { orders, boosts };
+        }
+
+        function renderReport() {
+            const { orders, boosts } = getFilteredOrdersAndBoosts();
+            const cancelledOrders = orders.filter(o => o.status === 'cancelled');
+            const totalCondition = orders.reduce((s,o)=>s+(o.conditionAmount||0),0);
+            const totalProduct = orders.reduce((s,o)=>s+(o.productTotal||0),0);
+            const totalDelivery = orders.reduce((s,o)=>s+(o.deliveryCharge||0),0);
+            const totalPackaging = orders.reduce((s,o)=>s+(o.packagingCost||0),0);
+            const totalNet = orders.reduce((s,o)=>s+(o.netAmount||0),0);
+            const totalProfit = orders.reduce((s,o)=>s+(o.profit||0),0);
+            const totalBoost = boosts.reduce((s,b)=>s+b.bdtAmount,0);
+            const cancelledLoss = cancelledOrders.reduce((s,o)=>s+Math.abs(o.profit||0),0);
+
+            document.getElementById('report-summary').innerHTML = `
+                <div class="flex justify-between"><span class="text-xs text-gray-400 font-bold">মোট অর্ডার</span><span class="text-sm font-black">${orders.length}</span></div>
+                <div class="flex justify-between"><span class="text-xs text-gray-400 font-bold">মোট Condition</span><span class="text-sm font-black">${fmt(totalCondition)}</span></div>
+                <div class="flex justify-between"><span class="text-xs text-gray-400 font-bold">মোট ক্রয় মূল্য (পণ্যের খরচ)</span><span class="text-sm font-black text-orange-500">${fmt(totalProduct)}</span></div>
+                <div class="flex justify-between"><span class="text-xs text-gray-400 font-bold">মোট ডেলিভারি চার্জ</span><span class="text-sm font-black">${fmt(totalDelivery)}</span></div>
+                <div class="flex justify-between"><span class="text-xs text-gray-400 font-bold">মোট প্যাকেজিং খরচ</span><span class="text-sm font-black text-orange-500">${fmt(totalPackaging)}</span></div>
+                ${cancelledOrders.length ? `<div class="flex justify-between"><span class="text-xs text-gray-400 font-bold">ক্যান্সেল/ফেরত অর্ডার</span><span class="text-sm font-black text-red-500">${cancelledOrders.length}টি (ক্ষতি ${fmt(cancelledLoss)})</span></div>` : ''}
+                <div class="flex justify-between"><span class="text-xs text-gray-400 font-bold">মোট নেট এমাউন্ট</span><span class="text-sm font-black">${fmt(totalNet)}</span></div>
+                <div class="flex justify-between pt-2 border-t border-gray-50"><span class="text-xs text-gray-400 font-bold">মোট লাভ</span><span class="text-sm font-black text-green-600">${fmt(totalProfit)}</span></div>
+                <div class="flex justify-between"><span class="text-xs text-gray-400 font-bold">বুস্ট খরচ</span><span class="text-sm font-black text-red-500">${fmt(totalBoost)}</span></div>
+                <div class="flex justify-between pt-2 border-t border-gray-50"><span class="text-sm font-bold">নিট লাভ (বুস্ট বাদে)</span><span class="text-base font-black text-blue-600">${fmt(totalProfit-totalBoost)}</span></div>
+            `;
+        }
+
+        function exportReportCSV() {
+            const { orders } = getFilteredOrdersAndBoosts();
+            if(orders.length === 0) return showAlert('কোনো অর্ডার নেই এই সময়ে!');
+            const header = ['তারিখ','নাম','মোবাইল','ঠিকানা','পণ্য','Condition','ক্রয়মূল্য','ডেলিভারি','প্যাকেজিং','নেট','লাভ'];
+            const rows = orders.map(o => [o.date, o.name, o.mobile, o.address, itemsToString(o), o.conditionAmount, o.productTotal, o.deliveryCharge, o.packagingCost, o.netAmount, o.profit]);
+            let csv = header.join(',') + '\n' + rows.map(r => r.map(v => `"${String(v||'').replace(/"/g,'""')}"`).join(',')).join('\n');
+            const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'report_' + Date.now() + '.csv';
+            link.click();
+        }
+
+        function exportReportPDF() {
+            const { orders, boosts } = getFilteredOrdersAndBoosts();
+            if(orders.length === 0) return showAlert('কোনো অর্ডার নেই এই সময়ে!');
+            const totalProfit = orders.reduce((s,o)=>s+(o.profit||0),0);
+            const totalBoost = boosts.reduce((s,b)=>s+b.bdtAmount,0);
+            let rowsHtml = orders.map(o => `
+                <tr>
+                    <td style="padding:4px;border:1px solid #ddd;">${o.date}</td>
+                    <td style="padding:4px;border:1px solid #ddd;">${o.name||'-'}</td>
+                    <td style="padding:4px;border:1px solid #ddd;">${itemsToString(o)}</td>
+                    <td style="padding:4px;border:1px solid #ddd;">${fmt(o.netAmount)}</td>
+                    <td style="padding:4px;border:1px solid #ddd;">${fmt(o.profit)}</td>
+                </tr>
+            `).join('');
+            const htmlDoc = `<!DOCTYPE html><html lang="bn"><head><meta charset="UTF-8">
+                <title>রিপোর্ট - ${appState.settings.shopName}</title>
+                <style>body{font-family:sans-serif;padding:20px;}</style></head><body>
+                <h2 style="font-size:20px;font-weight:900;">${appState.settings.shopName} - রিপোর্ট</h2>
+                <p style="font-size:12px;color:#666;margin-bottom:12px;">মোট লাভ (বুস্ট বাদে): ${fmt(totalProfit-totalBoost)}</p>
+                <table style="width:100%;border-collapse:collapse;font-size:12px;">
+                    <tr style="background:#f1f5f9;">
+                        <th style="padding:4px;border:1px solid #ddd;">তারিখ</th><th style="padding:4px;border:1px solid #ddd;">নাম</th><th style="padding:4px;border:1px solid #ddd;">পণ্য</th><th style="padding:4px;border:1px solid #ddd;">নেট</th><th style="padding:4px;border:1px solid #ddd;">লাভ</th>
+                    </tr>
+                    ${rowsHtml}
+                </table>
+                </body></html>`;
+            const blob = new Blob([htmlDoc], { type: 'text/html;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'report_' + Date.now() + '.html';
+            link.click();
+            showAlert('রিপোর্ট ফাইল ডাউনলোড হয়েছে। এটা ফোনের ব্রাউজার (Chrome) দিয়ে খুলে সেখান থেকে প্রিন্ট বা শেয়ার করতে পারবেন।');
+        }
+
+        // ============ SETTINGS ============
+        function loadSettingsForm() {
+            const s = appState.settings;
+            document.getElementById('set-shop-name').value = s.shopName;
+            document.getElementById('set-currency').value = s.currency;
+            document.getElementById('set-large-price').value = s.largePlatePrice;
+            document.getElementById('set-small-price').value = s.smallPlatePrice;
+            document.getElementById('set-mirror-price').value = s.mirrorPrice;
+            document.getElementById('set-delivery-charge').value = s.deliveryCharge;
+            document.getElementById('set-packaging-cost').value = s.packagingCost;
+            document.getElementById('set-steadfast-key').value = s.steadfastApiKey || '';
+            document.getElementById('set-steadfast-secret').value = s.steadfastSecretKey || '';
+            document.getElementById('set-dollar-rate').value = s.dollarRate;
+            document.getElementById('set-pin-toggle').checked = s.pinEnabled;
+            document.getElementById('set-pin-value').classList.toggle('hidden', !s.pinEnabled);
+            document.getElementById('set-pin-value').value = s.pin || '';
+            if(s.shopLogo) {
+                document.getElementById('settings-logo-preview').src = s.shopLogo;
+                document.getElementById('settings-logo-preview').classList.remove('hidden');
+                document.getElementById('settings-logo-placeholder').classList.add('hidden');
+            }
+            renderOtherProductsList();
+        }
+
+        function handleLogoUpload(input) {
+            if(!input.files || !input.files[0]) return;
+            const reader = new FileReader();
+            reader.onload = e => {
+                appState.settings.shopLogo = e.target.result;
+                document.getElementById('settings-logo-preview').src = e.target.result;
+                document.getElementById('settings-logo-preview').classList.remove('hidden');
+                document.getElementById('settings-logo-placeholder').classList.add('hidden');
+                saveDB();
+            };
+            reader.readAsDataURL(input.files[0]);
+        }
+
+        function renderOtherProductsList() {
+            const el = document.getElementById('other-products-list');
+            const list = appState.settings.otherProducts || [];
+            el.innerHTML = list.length === 0 ? `<p class="text-xs text-gray-300 font-bold">কোনো অতিরিক্ত পণ্য নেই</p>` :
+            list.map((p, i) => `
+                <div class="flex justify-between items-center bg-gray-50 p-2.5 rounded-xl">
+                    <p class="text-xs font-bold">${p.name} — ${fmt(p.price)}</p>
+                    <button onclick="removeOtherProduct(${i})" class="text-red-400 text-xs font-bold">✕</button>
+                </div>
+            `).join('');
+        }
+
+        function addOtherProduct() {
+            const name = document.getElementById('new-prod-name').value.trim();
+            const price = parseFloat(document.getElementById('new-prod-price').value) || 0;
+            if(!name) return showAlert('পণ্যের নাম দিন!');
+            appState.settings.otherProducts.push({ name, price });
+            saveDB();
+            document.getElementById('new-prod-name').value = '';
+            document.getElementById('new-prod-price').value = '';
+            renderOtherProductsList();
+        }
+
+        function removeOtherProduct(index) {
+            appState.settings.otherProducts.splice(index, 1);
+            saveDB();
+            renderOtherProductsList();
+        }
+
+        function togglePinLock() {
+            const enabled = document.getElementById('set-pin-toggle').checked;
+            document.getElementById('set-pin-value').classList.toggle('hidden', !enabled);
+        }
+
+        function saveSettings() {
+            const s = appState.settings;
+            s.shopName = document.getElementById('set-shop-name').value.trim() || 'Order Manager';
+            s.currency = document.getElementById('set-currency').value.trim() || '৳';
+            s.largePlatePrice = parseFloat(document.getElementById('set-large-price').value) || 0;
+            s.smallPlatePrice = parseFloat(document.getElementById('set-small-price').value) || 0;
+            s.mirrorPrice = parseFloat(document.getElementById('set-mirror-price').value) || 0;
+            s.deliveryCharge = parseFloat(document.getElementById('set-delivery-charge').value) || 0;
+            s.packagingCost = parseFloat(document.getElementById('set-packaging-cost').value) || 0;
+            s.steadfastApiKey = document.getElementById('set-steadfast-key').value.trim();
+            s.steadfastSecretKey = document.getElementById('set-steadfast-secret').value.trim();
+            s.dollarRate = parseFloat(document.getElementById('set-dollar-rate').value) || 0;
+            const pinEnabled = document.getElementById('set-pin-toggle').checked;
+            const pinValue = document.getElementById('set-pin-value').value.trim();
+            if(pinEnabled && pinValue.length !== 4) { showAlert('৪ ডিজিটের পিন দিন!'); return; }
+            s.pinEnabled = pinEnabled;
+            s.pin = pinValue;
+            saveDB();
+            showAlert('সেটিংস সেভ হয়েছে!');
+            renderDashboard();
+        }
+
+        // ============ BACKUP / RESTORE ============
+        function exportBackup() {
+            const blob = new Blob([JSON.stringify(appState, null, 2)], { type: 'application/json' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'twinkle_backup_' + Date.now() + '.json';
+            link.click();
+        }
+
+        function importBackup(input) {
+            if(!input.files || !input.files[0]) return;
+            showConfirm('বর্তমান সব ডেটা পরিবর্তিত হয়ে যাবে। নিশ্চিত?', function() {
+                const reader = new FileReader();
+                reader.onload = e => {
+                    try {
+                        const data = JSON.parse(e.target.result);
+                        if(!data.settings || !data.orders) throw new Error('invalid');
+                        appState = data;
+                        saveDB();
+                        showAlert('রিস্টোর সফল হয়েছে!');
+                        setTimeout(() => location.reload(), 1200);
+                    } catch(err) {
+                        showAlert('ফাইলটি সঠিক ব্যাকআপ ফরম্যাটে নেই!');
+                    }
+                };
+                reader.readAsText(input.files[0]);
+            }, function() {
+                input.value = '';
+            });
+        }
+
+        // ============ PIN LOCK ============
+        function checkLock() {
+            if(appState.settings.pinEnabled && appState.settings.pin) {
+                document.getElementById('lock-screen').classList.remove('hidden');
+                document.getElementById('lock-shopname').innerText = appState.settings.shopName;
+            }
+        }
+        function handleLockInput(input) {
+            const val = input.value.replace(/\D/g,'').slice(0,4);
+            input.value = val;
+            document.querySelectorAll('#lock-dots .lock-dot').forEach((dot,i) => {
+                dot.classList.toggle('filled', i < val.length);
+            });
+            document.getElementById('lock-error').classList.add('hidden');
+            if(val.length === 4) tryUnlock();
+        }
+        function tryUnlock() {
+            const val = document.getElementById('lock-pin-input').value;
+            if(val === appState.settings.pin) {
+                document.getElementById('lock-screen').classList.add('hidden');
+            } else {
+                document.getElementById('lock-error').classList.remove('hidden');
+                document.getElementById('lock-pin-input').value = '';
+                document.querySelectorAll('#lock-dots .lock-dot').forEach(dot => dot.classList.remove('filled'));
+            }
+        }
+
+        // ============ INIT ============
+        window.onload = () => {
+            applyTheme();
+            checkLock();
+            renderDashboard();
+        };
+    </script>
+
+</body>
+</html>
