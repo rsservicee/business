@@ -1521,6 +1521,48 @@ const I18N = {
             }
         }
 
+        // ============ স্টেডফাস্ট স্ট্যাটাস অটো চেক ============
+        // ডেলিভারি/ক্যান্সেল হয়ে যাওয়া অর্ডার আর চেক হয় না; বাকিগুলো নিজে থেকেই আপডেট হয়।
+        const SF_FINAL_STATUSES = ['delivered', 'partial_delivered', 'cancelled'];
+        let sfAutoRunning = false;
+        let sfLastAutoCheck = 0;
+
+        async function autoCheckSteadfast() {
+            const s = appState.settings;
+            if(sfAutoRunning || !s.steadfastApiKey || !s.steadfastSecretKey) return;
+            if(navigator.onLine === false) return;
+            const pending = appState.orders.filter(function(o) {
+                return o.steadfastId && o.status !== 'cancelled' && SF_FINAL_STATUSES.indexOf(String(o.steadfastStatus || '').toLowerCase()) === -1;
+            });
+            if(!pending.length) return;
+            sfAutoRunning = true;
+            sfLastAutoCheck = Date.now();
+            let changed = false;
+            try {
+                for(const o of pending) {
+                    try {
+                        const res = await fetch(STEADFAST_BASE + '/status_by_cid/' + o.steadfastId, {
+                            method: 'GET',
+                            headers: { 'Api-Key': s.steadfastApiKey, 'Secret-Key': s.steadfastSecretKey }
+                        });
+                        const data = await res.json();
+                        if(data && data.delivery_status && data.delivery_status !== o.steadfastStatus) {
+                            o.steadfastStatus = data.delivery_status;
+                            changed = true;
+                        }
+                    } catch(e) { /* নেট সমস্যা হলে এই অর্ডার বাদ, পরের বার আবার চেক হবে */ }
+                    await new Promise(function(r) { setTimeout(r, 400); });
+                }
+            } finally {
+                sfAutoRunning = false;
+            }
+            if(changed) {
+                saveDB();
+                renderOrderList();
+                if(typeof detailOrderId !== 'undefined' && detailOrderId && document.getElementById('modal-order-detail').classList.contains('active')) renderOrderDetail();
+            }
+        }
+
         function toggleOrderCancel(id) {
             const o = appState.orders.find(x => x.id === id);
             if(!o) return;
@@ -2611,6 +2653,12 @@ const I18N = {
             checkLock();
             renderDashboard();
             initFirebaseApp();
+            // স্টেডফাস্ট স্ট্যাটাস অটো চেক: চালুর কিছুক্ষণ পর, প্রতি ১০ মিনিটে, আর অ্যাপে ফিরে এলে
+            setTimeout(autoCheckSteadfast, 4000);
+            setInterval(autoCheckSteadfast, 10 * 60 * 1000);
+            document.addEventListener('visibilitychange', function() {
+                if(!document.hidden && Date.now() - sfLastAutoCheck > 2 * 60 * 1000) autoCheckSteadfast();
+            });
         };
     </script>
 
