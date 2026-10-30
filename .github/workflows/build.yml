@@ -1,0 +1,56 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Create Capacitor project
+        run: |
+          npm init -y
+          npm install @capacitor/core@7 @capacitor/cli@7 @capacitor/android@7
+          mkdir -p www
+          cp index.html www/index.html
+          cat > capacitor.config.json <<'EOF'
+          {
+            "appId": "com.fazlul.ordermanager",
+            "appName": "Order Manager",
+            "webDir": "www",
+            "plugins": {
+              "CapacitorHttp": { "enabled": true }
+            }
+          }
+          EOF
+
+      - name: Add Android platform and sync
+        run: |
+          npx cap add android
+          npx cap sync android
+
+      - name: Build debug APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: order-manager-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
