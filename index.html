@@ -70,6 +70,40 @@
         body.dark .lh-app input[type=range]{accent-color:#94a3b8}
         body.dark .lh-btn{background:#334155}
     </style>
+<style id="desktop-layout">
+/* শুধু পিসি/বড় স্ক্রিনের জন্য — ফোনের ডিজাইন অপরিবর্তিত */
+@media (min-width: 1024px) {
+  /* নেভিগেশন নিচ থেকে বাম সাইডবারে */
+  nav.fixed.bottom-0 {
+    top: 0 !important; bottom: 0 !important; right: auto !important; left: 0 !important;
+    width: 230px; flex-direction: column !important; justify-content: flex-start !important;
+    align-items: stretch; gap: 6px; padding: 88px 14px 20px !important;
+    border-top: 0 !important; border-right: 1px solid #f1f5f9;
+  }
+  body.dark nav.fixed.bottom-0 { border-right-color: #334155; }
+  nav.fixed.bottom-0 > button {
+    flex-direction: row !important; justify-content: flex-start; align-items: center;
+    gap: 14px !important; padding: 12px 16px; border-radius: 14px; width: 100%;
+    transition: background .15s;
+  }
+  nav.fixed.bottom-0 > button:hover { background: #f1f5f9; }
+  body.dark nav.fixed.bottom-0 > button:hover { background: #334155; }
+  nav.fixed.bottom-0 > button .text-lg { font-size: 20px; }
+  nav.fixed.bottom-0 > button .text-\[9px\] { font-size: 14px; }
+  nav.fixed.bottom-0 > button.nav-active { background: #eff6ff; }
+  body.dark nav.fixed.bottom-0 > button.nav-active { background: rgba(59,130,246,.18); }
+  .nav-active::after { display: none; }
+
+  /* হেডার ও কনটেন্ট সাইডবারের ডানে */
+  header.sticky { margin-left: 230px; padding-left: 32px; padding-right: 32px; }
+  main.max-w-md { margin-left: 230px; margin-right: 0; max-width: none; padding: 28px 32px 40px; }
+  main.max-w-md > section.page { max-width: 880px; margin-left: auto; margin-right: auto; }
+
+  /* পপআপ স্ক্রিনের মাঝখানে */
+  .modal-overlay { align-items: center; }
+  .modal-box { border-radius: 28px; max-width: 34rem; max-height: 90vh; }
+}
+</style>
 </head>
 <body class="min-h-screen">
 
@@ -2373,7 +2407,7 @@ const I18N = {
                     cloudUser = user;
                     updateCloudUI();
                     if(cloudUnsubscribe) { cloudUnsubscribe(); cloudUnsubscribe = null; }
-                    if(user) startCloudListener();
+                    if(user) startCloudListener(); else markIncomingReady();
                 });
                 startIncomingOrdersListener();
             } catch(err) {
@@ -2384,14 +2418,36 @@ const I18N = {
         }
 
         // ============ ANABIYA CRAFT & ART থেকে অটো-অর্ডার আমদানি ============
+        let incomingQueue = {};
+        let incomingDone = {};
+        let incomingReady = false;
+        function flushIncomingQueue() {
+            if(!incomingReady) return;
+            Object.keys(incomingQueue).forEach(function(id) {
+                const data = incomingQueue[id];
+                delete incomingQueue[id];
+                if(incomingDone[id]) return;
+                incomingDone[id] = true;
+                importIncomingOrder(id, data);
+            });
+        }
+        function markIncomingReady() {
+            if(incomingReady) return;
+            incomingReady = true;
+            flushIncomingQueue();
+        }
         function startIncomingOrdersListener() {
+            // লগইন করা থাকলে ক্লাউড ব্যাকআপ লোড হওয়ার পরে অর্ডার ঢুকবে (নইলে ব্যাকআপ লোডে অর্ডার মুছে যেত)
+            setTimeout(markIncomingReady, 8000);
             firebase.firestore().collection('incomingOrders').where('processed', '==', false)
                 .onSnapshot(function(snap) {
                     snap.forEach(function(doc) {
-                        importIncomingOrder(doc.id, doc.data());
+                        if(!incomingDone[doc.id]) incomingQueue[doc.id] = doc.data();
                     });
+                    flushIncomingQueue();
                 }, function(err) {
                     console.log('incoming orders listener error', err);
+                    if(typeof showAlert === 'function') showAlert('ওয়েবসাইটের অর্ডার আনা যাচ্ছে না: ' + err.message + '\n\nFirebase (video-share-8c959) → Firestore → Rules এ incomingOrders কালেকশনের read/update অনুমতি দিন।');
                 });
         }
 
@@ -2438,6 +2494,7 @@ const I18N = {
                 source: 'Anabiya Craft & Art'
             });
             saveDB();
+            pushToCloud(true);
             renderDashboard();
             if(document.getElementById('page-orders') && document.getElementById('page-orders').classList.contains('active')) renderOrderList();
 
@@ -2451,9 +2508,9 @@ const I18N = {
                 .onSnapshot(function(doc) {
                     // নিজের করা পুশের "লোকাল ইকো" এড়িয়ে যাওয়া হচ্ছে, শুধু সার্ভার থেকে কনফার্ম হওয়া ডেটা প্রসেস হবে
                     if(doc.metadata.hasPendingWrites) return;
-                    if(!doc.exists || !doc.data().data) return;
+                    if(!doc.exists || !doc.data().data) { markIncomingReady(); return; }
                     const incoming = doc.data().data;
-                    if(incoming === lastAppliedCloudData) return; // একই ডেটা আবার প্রসেস করার দরকার নেই
+                    if(incoming === lastAppliedCloudData) { markIncomingReady(); return; } // একই ডেটা আবার প্রসেস করার দরকার নেই
                     lastAppliedCloudData = incoming;
                     try {
                         const parsed = JSON.parse(incoming);
@@ -2466,9 +2523,10 @@ const I18N = {
                         if(document.getElementById('page-reports') && document.getElementById('page-reports').classList.contains('active')) renderReport();
                         const statusEl = document.getElementById('cloud-sync-status');
                         if(statusEl) statusEl.innerText = t('cloud_last_sync') + new Date().toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' });
-                    } catch(e) { console.log('cloud listener parse error', e); }
+                        markIncomingReady();
+                    } catch(e) { console.log('cloud listener parse error', e); markIncomingReady(); }
                 }, function(err) {
-                    console.log('cloud listener error', err);
+                    console.log('cloud listener error', err); markIncomingReady();
                 });
         }
 
