@@ -834,8 +834,8 @@ const I18N = {
         }
 
         // ============ ইনভেস্টর রিপোর্ট পেজের সাথে ডেটা সংযোগ ============
-        // Steadfast এ পাঠানো অর্ডারগুলোর সংক্ষিপ্ত তথ্য (শুধু ইনভয়েস নম্বর, অবস্থা, COD, তারিখ) publicStats এ যায়।
-        // নাম, মোবাইল, ঠিকানা বা লাভের হিসাব কখনো পাঠানো হয় না।
+        // শুধু যেসব অর্ডারে "ইনভেস্টরকে দেখাও" চালু করা আছে সেগুলোর সংক্ষিপ্ত তথ্য (নম্বর, অবস্থা, COD, নিট লাভ, তারিখ) publicStats এ যায়।
+        // ক্রেতার নাম, মোবাইল বা ঠিকানা কখনো পাঠানো হয় না।
         const PUBLIC_STATS_DOC = 's_62d283c9620960e6a596';
         let publicStatsTimer = null, lastPublicStats = '';
         function syncPublicStats() {
@@ -843,11 +843,12 @@ const I18N = {
             publicStatsTimer = setTimeout(function() {
                 try {
                     if(typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length) return;
-                    const list = (appState.orders || []).filter(function(o) { return o.steadfastId; }).map(function(o) {
+                    const list = (appState.orders || []).filter(function(o) { return o.showInvestor; }).map(function(o) {
                         return {
-                            id: String(o.steadfastId),
-                            s: o.steadfastStatus || 'pending',
+                            id: String(o.steadfastId || o.id),
+                            s: o.status === 'cancelled' ? 'cancelled' : (o.steadfastStatus || 'pending'),
                             cod: Number(o.conditionAmount || 0),
+                            p: Math.round(Number(o.profit || 0)),
                             d: o.dateISO || new Date(Number(o.id) || Date.now()).toISOString()
                         };
                     });
@@ -1236,6 +1237,14 @@ const I18N = {
             renderOrderList();
         }
 
+        function toggleInvestorShow(id) {
+            const o = appState.orders.find(x => x.id === id);
+            if(!o) return;
+            o.showInvestor = !o.showInvestor;
+            saveDB();
+            renderOrderList();
+        }
+
         function toggleOrderSettled(id) {
             const o = appState.orders.find(x => x.id === id);
             if(!o) return;
@@ -1490,7 +1499,10 @@ const I18N = {
                     </div>
                     ${orderContactButtons(o)}
                     ${!o.steadfastId && o.status !== 'cancelled' ? `<button onclick="sendToSteadfast(${o.id})" class="w-full bg-teal-50 text-teal-600 py-2 rounded-xl text-xs font-bold">${t('send_to_steadfast')}</button>` : ''}
-                    ${o.status !== 'cancelled' ? `<button onclick="toggleOrderSettled(${o.id})" class="w-full ${o.settled ? 'bg-green-600 text-white' : 'bg-gray-50 text-gray-500'} py-2 rounded-xl text-xs font-bold">${o.settled ? t('settled_btn') : t('settle_btn')}</button>` : ''}
+                    <div class="flex gap-1.5">
+                    <button onclick="toggleInvestorShow(${o.id})" class="flex-1 ${o.showInvestor ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-500'} py-1 rounded-lg text-[10px] font-bold">${o.showInvestor ? '👁 ইনভেস্টর দেখছে ✓' : '👁 ইনভেস্টরকে দেখাও'}</button>
+                    ${o.status !== 'cancelled' ? `<button onclick="toggleOrderSettled(${o.id})" class="flex-1 ${o.settled ? 'bg-green-600 text-white' : 'bg-gray-50 text-gray-500'} py-1 rounded-lg text-[10px] font-bold">${o.settled ? t('settled_btn') : t('settle_btn')}</button>` : ''}
+                    </div>
                     <div class="grid grid-cols-4 gap-1.5 pt-1">
                         <button onclick="openOrderDetail(${o.id})" class="bg-blue-50 text-blue-600 py-2 rounded-xl text-[11px] font-bold">${t('edit_btn')}</button>
                         ${o.status==='cancelled'
