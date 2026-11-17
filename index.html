@@ -830,7 +830,41 @@ const I18N = {
         function saveDB() {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
             pushToCloud();
+            syncPublicStats();
         }
+
+        // ============ ইনভেস্টর রিপোর্ট পেজের সাথে ডেটা সংযোগ ============
+        // Steadfast এ পাঠানো অর্ডারগুলোর সংক্ষিপ্ত তথ্য (শুধু ইনভয়েস নম্বর, অবস্থা, COD, তারিখ) publicStats এ যায়।
+        // নাম, মোবাইল, ঠিকানা বা লাভের হিসাব কখনো পাঠানো হয় না।
+        const PUBLIC_STATS_DOC = 's_62d283c9620960e6a596';
+        let publicStatsTimer = null, lastPublicStats = '';
+        function syncPublicStats() {
+            clearTimeout(publicStatsTimer);
+            publicStatsTimer = setTimeout(function() {
+                try {
+                    if(typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length) return;
+                    const list = (appState.orders || []).filter(function(o) { return o.steadfastId; }).map(function(o) {
+                        return {
+                            id: String(o.steadfastId),
+                            s: o.steadfastStatus || 'pending',
+                            cod: Number(o.conditionAmount || 0),
+                            d: o.dateISO || new Date(Number(o.id) || Date.now()).toISOString()
+                        };
+                    });
+                    const key = JSON.stringify(list);
+                    if(key === lastPublicStats) return;
+                    firebase.firestore().collection('publicStats').doc(PUBLIC_STATS_DOC).set({
+                        orders: list,
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    }).then(function() {
+                        lastPublicStats = key;
+                    }).catch(function(err) {
+                        console.log('publicStats sync failed', err);
+                    });
+                } catch(e) { console.log('publicStats sync error', e); }
+            }, 3000);
+        }
+        setTimeout(syncPublicStats, 6000);
         function fmt(n) { n = n || 0; return appState.settings.currency + Math.round(n).toLocaleString('bn-BD'); }
 
         // ============ NAVIGATION ============
